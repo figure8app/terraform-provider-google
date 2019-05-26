@@ -120,7 +120,8 @@ func addQueryParams(rawurl string, params map[string]string) (string, error) {
 }
 
 func replaceVars(d TerraformResourceData, config *Config, linkTmpl string) (string, error) {
-	re := regexp.MustCompile("{{([[:word:]]+)}}")
+	// https://github.com/google/re2/wiki/Syntax
+	re := regexp.MustCompile("{{([%[:word:]]+)}}")
 	f, err := buildReplacementFunc(re, d, config, linkTmpl)
 	if err != nil {
 		return "", err
@@ -128,6 +129,9 @@ func replaceVars(d TerraformResourceData, config *Config, linkTmpl string) (stri
 	return re.ReplaceAllStringFunc(linkTmpl, f), nil
 }
 
+// This function replaces references to Terraform properties (in the form of {{var}}) with their value in Terraform
+// It also replaces {{project}}, {{region}}, and {{zone}} with their appropriate values
+// This function supports URL-encoding the result by prepending '%' to the field name e.g. {{%var}}
 func buildReplacementFunc(re *regexp.Regexp, d TerraformResourceData, config *Config, linkTmpl string) (func(string) string, error) {
 	var project, region, zone string
 	var err error

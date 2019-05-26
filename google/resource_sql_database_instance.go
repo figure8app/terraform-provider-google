@@ -247,7 +247,6 @@ func resourceSqlDatabaseInstance() *schema.Resource {
 							Type:     schema.TypeMap,
 							Optional: true,
 							Elem:     &schema.Schema{Type: schema.TypeString},
-							Set:      schema.HashString,
 						},
 					},
 				},
@@ -493,12 +492,15 @@ func resourceSqlDatabaseInstanceCreate(d *schema.ResourceData, meta interface{})
 
 	op, err := config.clientSqlAdmin.Instances.Insert(project, instance).Do()
 	if err != nil {
+		if gerr, ok := err.(*googleapi.Error); ok && gerr.Code == 409 {
+			return fmt.Errorf("Error, failed to create instance %s with error code 409: %s. This may be due to a name collision - SQL instance names cannot be reused within a week.", instance.Name, err)
+		}
 		return fmt.Errorf("Error, failed to create instance %s: %s", instance.Name, err)
 	}
 
 	d.SetId(instance.Name)
 
-	err = sqladminOperationWaitTime(config, op, project, "Create Instance", int(d.Timeout(schema.TimeoutCreate).Minutes()))
+	err = sqlAdminOperationWaitTime(config.clientSqlAdmin, op, project, "Create Instance", int(d.Timeout(schema.TimeoutCreate).Minutes()))
 	if err != nil {
 		d.SetId("")
 		return err
@@ -525,7 +527,7 @@ func resourceSqlDatabaseInstanceCreate(d *schema.ResourceData, meta interface{})
 				err = retry(func() error {
 					op, err = config.clientSqlAdmin.Users.Delete(project, instance.Name, u.Host, u.Name).Do()
 					if err == nil {
-						err = sqladminOperationWaitTime(config, op, project, "Delete default root User", int(d.Timeout(schema.TimeoutCreate).Minutes()))
+						err = sqlAdminOperationWaitTime(config.clientSqlAdmin, op, project, "Delete default root User", int(d.Timeout(schema.TimeoutCreate).Minutes()))
 					}
 					return err
 				})
@@ -698,8 +700,13 @@ func resourceSqlDatabaseInstanceRead(d *schema.ResourceData, meta interface{}) e
 		return err
 	}
 
-	instance, err := config.clientSqlAdmin.Instances.Get(project,
-		d.Id()).Do()
+	var instance *sqladmin.DatabaseInstance
+	err = retry(
+		func() error {
+			instance, err = config.clientSqlAdmin.Instances.Get(project, d.Id()).Do()
+			return err
+		},
+	)
 
 	if err != nil {
 		return handleNotFoundError(err, d, fmt.Sprintf("SQL Database Instance %q", d.Get("name").(string)))
@@ -779,7 +786,7 @@ func resourceSqlDatabaseInstanceUpdate(d *schema.ResourceData, meta interface{})
 		return fmt.Errorf("Error, failed to update instance settings for %s: %s", instance.Name, err)
 	}
 
-	err = sqladminOperationWaitTime(config, op, project, "Update Instance", int(d.Timeout(schema.TimeoutUpdate).Minutes()))
+	err = sqlAdminOperationWaitTime(config.clientSqlAdmin, op, project, "Update Instance", int(d.Timeout(schema.TimeoutUpdate).Minutes()))
 	if err != nil {
 		return err
 	}
@@ -812,7 +819,7 @@ func resourceSqlDatabaseInstanceDelete(d *schema.ResourceData, meta interface{})
 		return fmt.Errorf("Error, failed to delete instance %s: %s", d.Get("name").(string), err)
 	}
 
-	err = sqladminOperationWaitTime(config, op, project, "Delete Instance", int(d.Timeout(schema.TimeoutDelete).Minutes()))
+	err = sqlAdminOperationWaitTime(config.clientSqlAdmin, op, project, "Delete Instance", int(d.Timeout(schema.TimeoutDelete).Minutes()))
 	if err != nil {
 		return err
 	}

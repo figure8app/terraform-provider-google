@@ -126,7 +126,7 @@ resource "google_compute_vpn_tunnel" "tunnel1" {
     "google_compute_forwarding_rule.fr_udp4500",
   ]
 
-  labels {
+  labels = {
     foo = "bar"
   }
 }
@@ -253,6 +253,7 @@ The following arguments are supported:
 * `region` -
   (Optional)
   The region where the tunnel is located. If unset, is set to the region of `target_vpn_gateway`.
+
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 

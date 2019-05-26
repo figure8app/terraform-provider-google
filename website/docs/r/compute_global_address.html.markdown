@@ -66,23 +66,25 @@ The following arguments are supported:
 
 * `address` -
   (Optional)
-  The static external IP address represented by this resource.
+  The IP address or beginning of the address range represented by this
+  resource. This can be supplied as an input to reserve a specific
+  address or omitted to allow GCP to choose a valid one for you.
 
 * `description` -
   (Optional)
   An optional description of this resource.
-  Provide this property when you create the resource.
 
 * `ip_version` -
   (Optional)
   The IP Version that will be used by this address. Valid options are
-  IPV4 or IPV6. The default value is IPV4.
+  `IPV4` or `IPV6`. The default value is `IPV4`.
 
 * `address_type` -
   (Optional)
   The type of the address to reserve, default is EXTERNAL.
   * EXTERNAL indicates public/external single IP address.
   * INTERNAL indicates internal IP ranges belonging to some network.
+
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 

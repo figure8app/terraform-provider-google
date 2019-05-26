@@ -93,9 +93,13 @@ The following arguments are supported:
   of this network in the same region as the router. If set to `GLOBAL`,
   this network's cloud routers will advertise routes with all
   subnetworks of this network, across regions.
+
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 
+
+* `delete_default_routes_on_create`: If set to `true`, default routes (`0.0.0.0/0`) will be deleted
+  immediately after network creation. Defaults to `false`.
 
 ## Attributes Reference
 

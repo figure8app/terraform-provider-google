@@ -23,8 +23,6 @@ var (
 			"cidr_blocks": {
 				Type:     schema.TypeSet,
 				Optional: true,
-				Computed: true,
-				MaxItems: 20,
 				Elem:     cidrBlockConfig,
 			},
 		},
@@ -494,11 +492,12 @@ func resourceContainerCluster() *schema.Resource {
 			},
 
 			"ip_allocation_policy": {
-				Type:     schema.TypeList,
-				Optional: true,
-				Computed: true,
-				ForceNew: true,
-				MaxItems: 1,
+				Type:       schema.TypeList,
+				MaxItems:   1,
+				ForceNew:   true,
+				Optional:   true,
+				Computed:   true,
+				ConfigMode: schema.SchemaConfigModeAttr,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"use_ip_aliases": {
@@ -573,21 +572,12 @@ func resourceContainerCluster() *schema.Resource {
 				Optional: true,
 			},
 
-			"private_cluster": {
-				Removed:  "Use private_cluster_config.enable_private_nodes instead.",
-				Computed: true,
-				Type:     schema.TypeBool,
-				Optional: true,
-				ForceNew: true,
-			},
-
 			"private_cluster_config": {
 				Type:             schema.TypeList,
-				Optional:         true,
 				MaxItems:         1,
+				Optional:         true,
 				Computed:         true,
 				DiffSuppressFunc: containerClusterPrivateClusterConfigSuppress,
-				ConflictsWith:    []string{"private_cluster", "master_ipv4_cidr_block"},
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"enable_private_endpoint": {
@@ -620,13 +610,6 @@ func resourceContainerCluster() *schema.Resource {
 				},
 			},
 
-			"master_ipv4_cidr_block": {
-				Removed:  "Use private_cluster_config.master_ipv4_cidr_block instead.",
-				Computed: true,
-				Type:     schema.TypeString,
-				Optional: true,
-			},
-
 			"resource_labels": {
 				Type:     schema.TypeMap,
 				Optional: true,
@@ -647,6 +630,14 @@ func resourceContainerClusterCreate(d *schema.ResourceData, meta interface{}) er
 	location, err := getLocation(d, config)
 	if err != nil {
 		return err
+	}
+
+	// When parsing a subnetwork by name, we expect region or zone to be set.
+	// Users may have set location to either value, so set that value.
+	if isZone(location) {
+		d.Set("zone", location)
+	} else {
+		d.Set("region", location)
 	}
 
 	clusterName := d.Get("name").(string)
@@ -778,6 +769,13 @@ func resourceContainerClusterCreate(d *schema.ResourceData, meta interface{}) er
 	timeoutInMinutes := int(d.Timeout(schema.TimeoutCreate).Minutes())
 	waitErr := containerOperationWait(config, op, project, location, "creating GKE cluster", timeoutInMinutes)
 	if waitErr != nil {
+		// Try a GET on the cluster so we can see the state in debug logs. This will help classify error states.
+		_, getErr := config.clientContainerBeta.Projects.Locations.Clusters.Get(containerClusterFullName(project, location, clusterName)).Do()
+		if getErr != nil {
+			// Make errcheck happy
+			log.Printf("[WARN] Cluster %s was created in an error state and not found", clusterName)
+		}
+
 		if deleteErr := cleanFailedContainerCluster(d, meta); deleteErr != nil {
 			log.Printf("[WARN] Unable to clean up cluster from failed creation: %s", deleteErr)
 		} else {
@@ -890,7 +888,7 @@ func resourceContainerClusterRead(d *schema.ResourceData, meta interface{}) erro
 		return err
 	}
 
-	if err := d.Set("ip_allocation_policy", flattenIPAllocationPolicy(cluster.IpAllocationPolicy, d, config)); err != nil {
+	if err := d.Set("ip_allocation_policy", flattenIPAllocationPolicy(cluster, d, config)); err != nil {
 		return err
 	}
 
@@ -1785,35 +1783,36 @@ func flattenPrivateClusterConfig(c *containerBeta.PrivateClusterConfig) []map[st
 	}
 }
 
-func flattenIPAllocationPolicy(c *containerBeta.IPAllocationPolicy, d *schema.ResourceData, config *Config) []map[string]interface{} {
-	if c == nil {
+func flattenIPAllocationPolicy(c *containerBeta.Cluster, d *schema.ResourceData, config *Config) []map[string]interface{} {
+	if c == nil || c.IpAllocationPolicy == nil {
 		return nil
 	}
-	node_cidr_block := ""
-	if c.SubnetworkName != "" {
-		subnetwork, err := ParseSubnetworkFieldValue(c.SubnetworkName, d, config)
+	nodeCidrBlock := ""
+	if c.Subnetwork != "" {
+		subnetwork, err := ParseSubnetworkFieldValue(c.Subnetwork, d, config)
 		if err == nil {
 			sn, err := config.clientCompute.Subnetworks.Get(subnetwork.Project, subnetwork.Region, subnetwork.Name).Do()
 			if err == nil {
-				node_cidr_block = sn.IpCidrRange
+				nodeCidrBlock = sn.IpCidrRange
 			}
 		} else {
 			log.Printf("[WARN] Unable to parse subnetwork name, got error while trying to get new subnetwork: %s", err)
 		}
 	}
+	p := c.IpAllocationPolicy
 	return []map[string]interface{}{
 		{
-			"use_ip_aliases": c.UseIpAliases,
+			"use_ip_aliases": p.UseIpAliases,
 
-			"create_subnetwork": c.CreateSubnetwork,
-			"subnetwork_name":   c.SubnetworkName,
+			"create_subnetwork": p.CreateSubnetwork,
+			"subnetwork_name":   p.SubnetworkName,
 
-			"cluster_ipv4_cidr_block":  c.ClusterIpv4CidrBlock,
-			"services_ipv4_cidr_block": c.ServicesIpv4CidrBlock,
-			"node_ipv4_cidr_block":     node_cidr_block,
+			"cluster_ipv4_cidr_block":  p.ClusterIpv4CidrBlock,
+			"services_ipv4_cidr_block": p.ServicesIpv4CidrBlock,
+			"node_ipv4_cidr_block":     nodeCidrBlock,
 
-			"cluster_secondary_range_name":  c.ClusterSecondaryRangeName,
-			"services_secondary_range_name": c.ServicesSecondaryRangeName,
+			"cluster_secondary_range_name":  p.ClusterSecondaryRangeName,
+			"services_secondary_range_name": p.ServicesSecondaryRangeName,
 		},
 	}
 }
