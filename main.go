@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/hashicorp/terraform/plugin"
-	"github.com/odedniv/terraform-provider-google/google"
+	"github.com/figure8app/terraform-provider-google/google"
 )
 
 func main() {

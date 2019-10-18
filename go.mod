@@ -1,4 +1,4 @@
-module github.com/odedniv/terraform-provider-google
+module github.com/figure8app/terraform-provider-google
 
 require (
 	cloud.google.com/go v0.36.0
